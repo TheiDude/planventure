@@ -1,4 +1,6 @@
 import os
+import time
+from datetime import datetime
 from flask import Flask, jsonify, request, g
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -12,6 +14,9 @@ from auth_middleware import AuthMiddleware, require_auth, optional_auth, get_cur
 load_dotenv()
 
 app = Flask(__name__)
+
+# Store application start time for uptime calculation
+app.start_time = time.time()
 
 # Basic configurations
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
@@ -45,18 +50,100 @@ def home():
 
 @app.route('/health')
 def health_check():
+    """Comprehensive health check endpoint for monitoring and load balancers"""
+    
+    health_data = {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "uptime_seconds": int(time.time() - app.start_time),
+        "version": "1.0.0",
+        "environment": os.getenv('FLASK_ENV', 'production'),
+        "checks": {}
+    }
+    
+    overall_healthy = True
+    
+    # Database health check
     try:
-        # Test database connection
+        start_time = time.time()
         with db.engine.connect() as connection:
             connection.execute(db.text("SELECT 1"))
-        db_status = "connected"
-    except Exception:
-        db_status = "disconnected"
+        response_time = (time.time() - start_time) * 1000  # Convert to milliseconds
+        
+        health_data["checks"]["database"] = {
+            "status": "healthy",
+            "response_time_ms": round(response_time, 2)
+        }
+    except Exception as e:
+        health_data["checks"]["database"] = {
+            "status": "unhealthy",
+            "error": str(e)
+        }
+        overall_healthy = False
     
+    # Auth middleware health check
+    try:
+        # Simple check to ensure auth middleware is loaded
+        if hasattr(app, 'auth_middleware'):
+            health_data["checks"]["auth_middleware"] = {
+                "status": "healthy"
+            }
+        else:
+            health_data["checks"]["auth_middleware"] = {
+                "status": "unhealthy",
+                "error": "Auth middleware not initialized"
+            }
+            overall_healthy = False
+    except Exception as e:
+        health_data["checks"]["auth_middleware"] = {
+            "status": "unhealthy",
+            "error": str(e)
+        }
+        overall_healthy = False
+    
+    # CORS configuration check
+    try:
+        cors_origins = os.getenv('CORS_ORIGINS', '')
+        health_data["checks"]["cors"] = {
+            "status": "healthy" if cors_origins else "warning",
+            "origins_count": len(cors_origins.split(',')) if cors_origins else 0
+        }
+    except Exception as e:
+        health_data["checks"]["cors"] = {
+            "status": "unhealthy",
+            "error": str(e)
+        }
+    
+    # Set overall status
+    if not overall_healthy:
+        health_data["status"] = "unhealthy"
+        return jsonify(health_data), 503  # Service Unavailable
+    
+    return jsonify(health_data), 200
+
+@app.route('/status')
+def simple_status():
+    """Simple status endpoint for quick health checks"""
     return jsonify({
-        "status": "healthy",
-        "database": db_status
-    })
+        "status": "ok",
+        "timestamp": datetime.utcnow().isoformat() + "Z"
+    }), 200
+
+@app.route('/ready')
+def readiness_check():
+    """Kubernetes readiness probe endpoint"""
+    try:
+        # Quick database check
+        with db.engine.connect() as connection:
+            connection.execute(db.text("SELECT 1"))
+        return jsonify({"ready": True}), 200
+    except Exception:
+        return jsonify({"ready": False}), 503
+
+@app.route('/live') 
+def liveness_check():
+    """Kubernetes liveness probe endpoint"""
+    return jsonify({"alive": True}), 200
 
 @app.route('/auth/test-token')
 @token_required
