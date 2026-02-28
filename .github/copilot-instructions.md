@@ -101,14 +101,27 @@ DELETE /api/trips/<id>             # Delete trip by ID
 GET    /api/trips/stats            # Trip statistics and analytics
 ```
 
+### Itinerary Template System
+```
+GET    /api/trips/itinerary-template              # Public template generation (no auth)
+POST   /api/trips/<id>/generate-itinerary         # Generate itinerary for existing trip (auth required)
+```
+
 ### User Management
 ```
 GET    /api/user/profile           # Protected user profile endpoint
 ```
 
+### Health & Monitoring Endpoints
+```
+GET    /health                     # Comprehensive health check with detailed metrics
+GET    /status                     # Simple status check for load balancers 
+GET    /ready                      # Readiness probe for Kubernetes
+GET    /live                       # Liveness probe for Kubernetes
+```
+
 ### System Endpoints
 ```
-GET    /health                     # Health check with database status
 GET    /                           # Welcome message
 ```
 
@@ -145,6 +158,143 @@ class Trip(db.Model):
     itinerary_json = db.Column(db.Text)  # JSON string for flexible itinerary storage
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Enhanced methods for itinerary template generation
+    def generate_default_itinerary_template(self, trip_type='general'):
+        """Generate smart itinerary template based on trip duration and type"""
+    
+    def get_itinerary_suggestions_by_type(self, trip_type):
+        """Get activity suggestions based on trip type"""
+        
+    def set_itinerary(self, itinerary_data):
+        """Set itinerary with validation"""
+```
+
+## 🎯 Advanced Features
+
+### Itinerary Template System
+
+The API provides intelligent itinerary generation with 6 different trip types:
+
+**Trip Types & Activity Suggestions:**
+- **Cultural**: Art galleries, museums, festivals, traditional craft workshops, local cooking classes
+- **Adventure**: Hiking, water sports, mountain biking, rock climbing, wildlife watching  
+- **Business**: Business meetings, conferences, networking events, coworking spaces
+- **Relaxation**: Spa activities, beach time, wellness activities, scenic drives
+- **Family**: Family parks, kid-friendly attractions, educational tours, interactive museums
+- **General**: Popular attractions, local experiences, shopping, dining, sightseeing
+
+**Template Generation Features:**
+- **Duration-based structure**: Intelligent daily activity planning
+- **Smart day progression**: Arrival → Activities → Departure
+- **Customizable framework**: Flexible templates for personalization
+- **Public access**: No authentication required for basic templates
+- **User-specific generation**: Authenticated users can generate for existing trips
+
+```python
+# Public template generation (no auth required)
+@trips_bp.route('/itinerary-template', methods=['GET'])
+def get_itinerary_template():
+    duration = request.args.get('duration', type=int)
+    destination = request.args.get('destination')
+    trip_type = request.args.get('trip_type', 'general')
+    
+    # Generate template logic...
+
+# Authenticated trip enhancement 
+@trips_bp.route('/<int:trip_id>/generate-itinerary', methods=['POST'])
+@require_auth
+def generate_trip_itinerary(trip_id):
+    # Generate and save to existing trip...
+```
+
+### Enhanced Health Monitoring
+
+**Four-tier health check system for different monitoring needs:**
+
+1. **`/health`** - Comprehensive diagnostics (5-15ms)
+   - Database connectivity with response times
+   - Auth middleware status
+   - CORS configuration validation
+   - Application uptime tracking
+   - Component-level health reporting
+
+2. **`/status`** - Simple availability check (~2ms)
+   - Lightweight "ping" for load balancers
+   - Always returns 200 with timestamp
+   - Minimal overhead for frequent checks
+
+3. **`/ready`** - Kubernetes readiness probe (~3ms)
+   - Database dependency validation
+   - Returns 200 when ready for traffic
+   - Returns 503 when not ready
+
+4. **`/live`** - Kubernetes liveness probe (~2ms)  
+   - Basic application responsiveness
+   - Always returns 200 unless completely dead
+   - Used for container restart decisions
+
+```python
+# Health check with comprehensive diagnostics
+@app.route('/health')
+def health_check():
+    health_data = {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "uptime_seconds": int(time.time() - app.start_time),
+        "version": "1.0.0",
+        "checks": {
+            "database": {"status": "healthy", "response_time_ms": 2.45},
+            "auth_middleware": {"status": "healthy"},
+            "cors": {"status": "healthy", "origins_count": 6}
+        }
+    }
+```
+
+### CORS Configuration for React Integration
+
+**Complete frontend integration support:**
+
+```python
+# Enhanced CORS setup for multiple React environments
+cors_origins = os.getenv('CORS_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(',')
+CORS(app, 
+     origins=cors_origins,
+     methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+     allow_headers=['Content-Type', 'Authorization', 'X-Requested-With'],
+     supports_credentials=True,
+     expose_headers=['Authorization']
+)
+```
+
+**Supported React Development Environments:**
+- **Create React App**: localhost:3000, 127.0.0.1:3000
+- **Alternative CRA ports**: localhost:3001, 127.0.0.1:3001  
+- **Vite**: localhost:5173, 127.0.0.1:5173
+- **Custom ports**: Configurable via CORS_ORIGINS environment variable
+
+### Advanced Trip Management Features
+
+**Filtering & Pagination:**
+```bash
+# Advanced trip filtering examples
+/api/trips?destination=Paris&status=planned&sort=budget&order=desc&page=1&per_page=10
+/api/trips?start_date_after=2026-06-01&budget_min=1000&budget_max=5000
+/api/trips?search=europe&sort=created_at&order=asc
+```
+
+**Trip Statistics:**
+```bash
+# Get user trip analytics
+GET /api/trips/stats
+{
+  "total_trips": 15,
+  "trips_by_status": {"planned": 5, "completed": 8, "ongoing": 2},
+  "total_budget": 45000.0,
+  "average_budget": 3000.0,
+  "destinations_visited": ["Paris", "Tokyo", "New York"],
+  "trip_duration_stats": {"min": 3, "max": 14, "average": 7.2}
+}
 ```
 
 ## 🔐 Authentication Patterns
@@ -308,7 +458,10 @@ with app.app_context():
 SECRET_KEY=your-secret-key-change-in-production
 JWT_SECRET_KEY=jwt-secret-change-in-production
 DATABASE_URL=sqlite:///instance/planventure.db
-CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+
+# CORS Configuration for React Frontend Development
+# Include common React development ports and both localhost/127.0.0.1
+CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001,http://localhost:5173,http://127.0.0.1:5173
 
 # Optional
 FLASK_ENV=development
@@ -316,6 +469,68 @@ FLASK_DEBUG=True
 API_HOST=127.0.0.1
 API_PORT=5000
 ```
+
+## 🧪 Comprehensive Testing Suite
+
+The project includes extensive test coverage across all major components:
+
+### Test Scripts Overview
+
+1. **`test_middleware_integration.py`** - Authentication system testing
+   - User registration and login flows
+   - JWT token generation and validation
+   - Protected route access patterns
+   - Middleware functionality verification
+
+2. **`test_trips_crud_fixed.py`** - Trip management testing
+   - Complete CRUD operations (Create, Read, Update, Delete)
+   - Advanced filtering and pagination
+   - User ownership validation
+   - Error handling and edge cases
+
+3. **`test_itinerary_simple.py`** - Itinerary template testing
+   - Public template generation (no auth required)
+   - Authenticated template generation for existing trips
+   - Multiple trip type testing (cultural, adventure, business, etc.)
+   - Duration-based template structure validation
+
+4. **`test_cors_config.py`** - React integration testing
+   - CORS preflight request handling
+   - Multiple React development port support
+   - Authentication flow with CORS headers
+   - Credentials handling for JWT tokens
+
+5. **`test_health_endpoints.py`** - Health monitoring testing
+   - All four health endpoint types (/health, /status, /ready, /live)
+   - Performance benchmarking and response times
+   - Component-level health diagnostics
+   - Error scenario handling
+
+### Running the Complete Test Suite
+
+```bash
+cd planventure-api
+
+# Run all tests sequentially
+python3 test_middleware_integration.py    # Auth system
+python3 test_trips_crud_fixed.py         # Trip CRUD  
+python3 test_itinerary_simple.py         # Itinerary templates
+python3 test_cors_config.py               # CORS integration
+python3 test_health_endpoints.py          # Health monitoring
+
+# Quick test verification
+curl http://127.0.0.1:5000/health | python3 -m json.tool
+```
+
+### Test Coverage Areas
+
+- ✅ **Authentication Flow**: Registration, login, token management, protected routes
+- ✅ **Trip Operations**: Full CRUD with filtering, pagination, sorting, statistics
+- ✅ **Itinerary Generation**: Public templates, authenticated generation, 6 trip types
+- ✅ **React Integration**: CORS preflight, multiple ports, credentials, headers
+- ✅ **Health Monitoring**: All endpoint types, performance, error scenarios
+- ✅ **Error Handling**: Validation, authentication, database, network errors
+- ✅ **Security Features**: User ownership, input validation, JWT security
 
 ## 📊 API Usage Examples
 
@@ -340,6 +555,68 @@ curl -X POST http://127.0.0.1:5000/api/trips \
 # 4. List trips with filtering
 curl -X GET "http://127.0.0.1:5000/api/trips?destination=Paris&sort=budget&order=desc" \
   -H "Authorization: Bearer TOKEN"
+```
+
+### Itinerary Template Examples
+```bash
+# 1. Generate public template (no authentication required)
+curl "http://127.0.0.1:5000/api/trips/itinerary-template?duration=7&destination=Tokyo&trip_type=cultural"
+
+# 2. Generate template for different trip types
+curl "http://127.0.0.1:5000/api/trips/itinerary-template?duration=5&trip_type=adventure"
+curl "http://127.0.0.1:5000/api/trips/itinerary-template?duration=3&trip_type=business"
+curl "http://127.0.0.1:5000/api/trips/itinerary-template?duration=10&trip_type=relaxation"
+
+# 3. Generate itinerary for existing trip (requires authentication)
+curl -X POST http://127.0.0.1:5000/api/trips/123/generate-itinerary \
+  -H "Authorization: Bearer TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"trip_type": "family"}'
+```
+
+### Health Monitoring Examples
+```bash
+# Comprehensive health check with detailed metrics
+curl http://127.0.0.1:5000/health | python3 -m json.tool
+
+# Simple status check for load balancers
+curl http://127.0.0.1:5000/status
+
+# Kubernetes readiness probe
+curl http://127.0.0.1:5000/ready
+
+# Kubernetes liveness probe  
+curl http://127.0.0.1:5000/live
+```
+
+### Advanced Trip Filtering Examples
+```bash
+# Filter by multiple criteria with pagination
+curl -H "Authorization: Bearer TOKEN" \
+  "http://127.0.0.1:5000/api/trips?status=planned&budget_min=1000&budget_max=5000&page=1&per_page=10"
+
+# Search trips with sorting
+curl -H "Authorization: Bearer TOKEN" \
+  "http://127.0.0.1:5000/api/trips?search=europe&sort=start_date&order=asc"
+
+# Get trip statistics
+curl -H "Authorization: Bearer TOKEN" \
+  "http://127.0.0.1:5000/api/trips/stats"
+```
+
+### React Integration Examples
+```bash
+# Test CORS preflight for React app
+curl -X OPTIONS -H "Origin: http://localhost:3000" \
+  -H "Access-Control-Request-Method: POST" \
+  -H "Access-Control-Request-Headers: Content-Type, Authorization" \
+  http://127.0.0.1:5000/auth/login -v
+
+# Test authenticated request with CORS headers
+curl -X GET http://127.0.0.1:5000/api/user/profile \
+  -H "Origin: http://localhost:3000" \
+  -H "Authorization: Bearer TOKEN" \
+  -H "Content-Type: application/json"
 ```
 
 ## ⚠️ Security Considerations
@@ -376,10 +653,16 @@ python init_db.py
 
 ## 📚 Documentation Files
 
+- `README.md` - Comprehensive project guide with all features and setup instructions
+- `REACT_INTEGRATION_GUIDE.md` - Complete React frontend integration documentation
+- `HEALTH_ENDPOINTS.md` - Health monitoring system documentation with examples
 - `AUTH_MIDDLEWARE_DOCS.md` - Complete authentication system documentation
 - `TRIP_CRUD_API.md` - Trip management API reference
-- `test_middleware_integration.py` - Authentication flow examples
-- `test_trips_crud_fixed.py` - Trip CRUD operation examples
+- `test_middleware_integration.py` - Authentication flow examples and testing
+- `test_trips_crud_fixed.py` - Trip CRUD operation examples and testing
+- `test_itinerary_simple.py` - Itinerary template generation testing
+- `test_cors_config.py` - CORS configuration and React integration testing
+- `test_health_endpoints.py` - Health monitoring endpoints testing
 
 ## 🎯 Project Goals & Architecture
 
