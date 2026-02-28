@@ -308,6 +308,9 @@ def create_trip():
         # Set itinerary if provided
         if 'itinerary' in data and data['itinerary']:
             trip.set_itinerary(data['itinerary'])
+        elif data.get('use_default_itinerary', False):
+            # Generate and set default itinerary template
+            trip.set_default_itinerary()
         
         db.session.add(trip)
         db.session.commit()
@@ -622,6 +625,122 @@ def get_trip_stats():
         return jsonify({
             'error': 'Server error',
             'message': 'Failed to retrieve trip statistics'
+        }), 500
+
+@trips_bp.route('/itinerary-template', methods=['GET'])
+def get_itinerary_template():
+    """Generate a default itinerary template without authentication.
+    
+    Query Parameters:
+        - duration (int): Trip duration in days (required)
+        - destination (str): Trip destination (optional)
+        - trip_type (str): Type of trip for activity suggestions (optional)
+    """
+    try:
+        # Get query parameters
+        duration = request.args.get('duration', type=int)
+        destination = request.args.get('destination')
+        trip_type = request.args.get('trip_type', 'general')
+        
+        if not duration or duration <= 0:
+            return jsonify({
+                'error': 'Validation error',
+                'message': 'Duration must be a positive integer'
+            }), 400
+        
+        if duration > 365:
+            return jsonify({
+                'error': 'Validation error', 
+                'message': 'Duration cannot exceed 365 days'
+            }), 400
+        
+        # Generate default template
+        template = Trip.generate_default_itinerary_template(duration, destination)
+        
+        # Get activity suggestions for the trip type
+        suggestions = Trip.get_itinerary_suggestions_by_type(trip_type)
+        
+        return jsonify({
+            'message': 'Itinerary template generated successfully',
+            'template': template,
+            'activity_suggestions': suggestions,
+            'parameters': {
+                'duration': duration,
+                'destination': destination,
+                'trip_type': trip_type
+            },
+            'usage_notes': [
+                'This is a template - customize activities based on your interests',
+                'Add specific times, addresses, and booking details',
+                'Consider local events, weather, and seasonal factors',
+                'Leave some flexibility for spontaneous activities'
+            ]
+        })
+        
+    except Exception as e:
+        logging.error(f"Error generating itinerary template: {e}")
+        return jsonify({
+            'error': 'Server error',
+            'message': 'Failed to generate itinerary template'
+        }), 500
+
+@trips_bp.route('/<int:trip_id>/generate-itinerary', methods=['POST'])
+@require_auth
+def generate_trip_itinerary(trip_id):
+    """Generate and set default itinerary for an existing trip.
+    
+    Optional body parameters:
+        - trip_type (str): Type of trip for activity suggestions
+        - overwrite (bool): Whether to overwrite existing itinerary (default: false)
+    """
+    user_id = get_current_user_id()
+    data = request.get_json() or {}
+    
+    try:
+        trip = check_trip_ownership(trip_id, user_id)
+        if not trip:
+            return jsonify({
+                'error': 'Trip not found',
+                'message': f'Trip with ID {trip_id} not found or you do not have permission to access it'
+            }), 404
+        
+        # Check if trip already has itinerary
+        existing_itinerary = trip.get_itinerary()
+        overwrite = data.get('overwrite', False)
+        
+        if existing_itinerary and not overwrite:
+            return jsonify({
+                'error': 'Itinerary exists',
+                'message': 'Trip already has an itinerary. Set overwrite=true to replace it.',
+                'existing_itinerary': existing_itinerary
+            }), 409
+        
+        # Generate default itinerary
+        trip.set_default_itinerary()
+        
+        # Get activity suggestions
+        trip_type = data.get('trip_type', 'general')
+        suggestions = Trip.get_itinerary_suggestions_by_type(trip_type)
+        
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Default itinerary generated successfully',
+            'trip': trip.to_dict(),
+            'activity_suggestions': suggestions,
+            'notes': [
+                'This is a basic template based on your trip duration',
+                'Customize the activities based on your interests and preferences',
+                'Consider local attractions, events, and seasonal factors'
+            ]
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        logging.error(f"Error generating itinerary for trip {trip_id}: {e}")
+        return jsonify({
+            'error': 'Server error',
+            'message': 'Failed to generate itinerary'
         }), 500
 
 # Error handlers for the blueprint

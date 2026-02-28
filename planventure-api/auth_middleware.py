@@ -106,6 +106,7 @@ class AuthMiddleware:
             '/auth/register', 
             '/auth/login',
             '/auth/validate-email',
+            '/api/trips/itinerary-template',
             '/',
             '/static'
         }
