@@ -5,6 +5,7 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 from models import db, User, Trip
 from jwt_utils import token_required, optional_token
+from auth_routes import auth_bp
 
 # Load environment variables
 load_dotenv()
@@ -20,6 +21,9 @@ app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'jwt-secret-change-in
 # Initialize extensions
 db.init_app(app)
 CORS(app, origins=os.getenv('CORS_ORIGINS', 'http://localhost:3000').split(','))
+
+# Register blueprints
+app.register_blueprint(auth_bp)
 
 @app.route('/')
 def home():
