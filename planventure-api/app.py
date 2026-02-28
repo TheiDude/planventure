@@ -21,7 +21,16 @@ app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'jwt-secret-change-in
 
 # Initialize extensions
 db.init_app(app)
-CORS(app, origins=os.getenv('CORS_ORIGINS', 'http://localhost:3000').split(','))
+
+# CORS Configuration for React Frontend
+cors_origins = os.getenv('CORS_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(',')
+CORS(app, 
+     origins=cors_origins,
+     methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+     allow_headers=['Content-Type', 'Authorization', 'X-Requested-With'],
+     supports_credentials=True,
+     expose_headers=['Authorization']
+)
 
 # Initialize auth middleware
 auth_middleware = AuthMiddleware(app)

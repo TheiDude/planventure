@@ -89,11 +89,8 @@ class AuthMiddleware:
         response.headers['X-Frame-Options'] = 'DENY'
         response.headers['X-XSS-Protection'] = '1; mode=block'
         
-        # Add CORS headers if needed
-        if current_app.config.get('CORS_ENABLED', True):
-            response.headers['Access-Control-Allow-Origin'] = '*'
-            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
-            response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
+        # CORS headers are now handled by Flask-CORS extension
+        # No manual CORS headers needed to avoid conflicts
         
         return response
     
