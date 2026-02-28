@@ -1,9 +1,10 @@
 import os
 import os
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 from dotenv import load_dotenv
 from models import db, User, Trip
+from jwt_utils import token_required, optional_token
 
 # Load environment variables
 load_dotenv()
@@ -37,6 +38,36 @@ def health_check():
     return jsonify({
         "status": "healthy",
         "database": db_status
+    })
+
+@app.route('/auth/test-token')
+@token_required
+def test_protected_route(current_user_id):
+    """Example protected route that requires authentication"""
+    user = User.query.get(current_user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    
+    return jsonify({
+        "message": "Access granted to protected route",
+        "user": user.to_dict()
+    })
+
+@app.route('/auth/profile')
+@optional_token
+def get_profile(current_user_id):
+    """Example route where authentication is optional"""
+    if current_user_id:
+        user = User.query.get(current_user_id)
+        if user:
+            return jsonify({
+                "authenticated": True,
+                "user": user.to_dict()
+            })
+    
+    return jsonify({
+        "authenticated": False,
+        "message": "No authentication provided"
     })
 
 if __name__ == '__main__':

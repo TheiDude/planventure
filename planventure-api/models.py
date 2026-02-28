@@ -1,7 +1,9 @@
 from datetime import datetime
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
+from flask import current_app
 import json
+import jwt_utils
 
 # Create db instance that will be initialized by app
 db = SQLAlchemy()
@@ -43,6 +45,26 @@ class User(db.Model):
             'updated_at': self.updated_at.isoformat(),
             'trip_count': len(self.trips)
         }
+    
+    def generate_tokens(self, include_refresh=True):
+        """Generate JWT tokens for the user"""
+        return jwt_utils.create_token_response(self.id, include_refresh)
+    
+    def generate_access_token(self, expires_in_hours=24):
+        """Generate access token for the user"""
+        return jwt_utils.generate_token(self.id, expires_in_hours)
+    
+    def generate_refresh_token(self, expires_in_days=30):
+        """Generate refresh token for the user"""
+        return jwt_utils.generate_refresh_token(self.id, expires_in_days)
+    
+    @staticmethod
+    def verify_token(token):
+        """Verify JWT token and return user ID if valid"""
+        payload = jwt_utils.validate_token(token)
+        if payload:
+            return payload.get('user_id')
+        return None
     
     def __repr__(self):
         return f'<User {self.email}>'
