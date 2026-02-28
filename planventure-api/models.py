@@ -5,6 +5,13 @@ from flask import current_app
 import json
 import jwt_utils
 
+# Try to import bcrypt as fallback
+try:
+    import bcrypt
+    BCRYPT_AVAILABLE = True
+except ImportError:
+    BCRYPT_AVAILABLE = False
+
 # Create db instance that will be initialized by app
 db = SQLAlchemy()
 
@@ -30,11 +37,42 @@ class User(db.Model):
     
     def set_password(self, password):
         """Hash and set the user's password"""
-        self.password_hash = generate_password_hash(password)
+        try:
+            # Try pbkdf2:sha256 method first (most compatible)
+            self.password_hash = generate_password_hash(password, method='pbkdf2:sha256')
+        except Exception as e:
+            print(f"pbkdf2:sha256 failed: {e}")
+            try:
+                # Fallback to bcrypt if available
+                if BCRYPT_AVAILABLE:
+                    salt = bcrypt.gensalt()
+                    self.password_hash = bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
+                    # Add a prefix to identify bcrypt hashes
+                    self.password_hash = 'bcrypt:' + self.password_hash
+                else:
+                    # Final fallback to pbkdf2:sha1 (older but more compatible)
+                    self.password_hash = generate_password_hash(password, method='pbkdf2:sha1')
+            except Exception as fallback_error:
+                print(f"All password hashing methods failed: {fallback_error}")
+                raise Exception(f"Password hashing failed: {fallback_error}")
     
     def check_password(self, password):
         """Check if provided password matches the hash"""
-        return check_password_hash(self.password_hash, password)
+        try:
+            # Check if it's a bcrypt hash
+            if self.password_hash.startswith('bcrypt:'):
+                if BCRYPT_AVAILABLE:
+                    bcrypt_hash = self.password_hash[7:]  # Remove 'bcrypt:' prefix
+                    return bcrypt.checkpw(password.encode('utf-8'), bcrypt_hash.encode('utf-8'))
+                else:
+                    print("bcrypt hash detected but bcrypt not available")
+                    return False
+            else:
+                # Use Werkzeug's check_password_hash for other methods
+                return check_password_hash(self.password_hash, password)
+        except Exception as e:
+            print(f"Password verification error: {e}")
+            return False
     
     def to_dict(self):
         """Convert user object to dictionary (excluding sensitive data)"""

@@ -6,11 +6,12 @@ with proper validation and JWT token management.
 """
 
 import re
+import logging
 from flask import Blueprint, request, jsonify
 from werkzeug.exceptions import BadRequest
 from models import db, User
 from jwt_utils import create_token_response
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 # Create authentication blueprint
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
@@ -103,9 +104,23 @@ def register():
             }), 400
         
         # Extract and validate required fields
-        email = data.get('email', '').strip().lower()
-        password = data.get('password', '')
-        confirm_password = data.get('confirm_password', '')
+        email = data.get('email')
+        password = data.get('password')
+        confirm_password = data.get('confirm_password')
+        
+        # Handle None values and convert to empty string for validation
+        if email is None:
+            email = ''
+        if password is None:
+            password = ''
+        if confirm_password is None:
+            confirm_password = ''
+            
+        # Strip and lowercase email if it's a string
+        if isinstance(email, str):
+            email = email.strip().lower()
+        else:
+            email = ''  # Convert non-string email to empty string
         
         # Validate required fields
         if not email:
@@ -152,12 +167,22 @@ def register():
         
         # Create new user
         try:
+            # Log attempt for debugging
+            print(f"Creating user with email: {email}")
+            
             new_user = User(email=email, password=password)
+            print(f"User object created: {new_user}")
+            
             db.session.add(new_user)
+            print("User added to session")
+            
             db.session.commit()
+            print(f"User committed to database with ID: {new_user.id}")
             
             # Generate JWT tokens
+            print("Generating JWT tokens...")
             tokens = new_user.generate_tokens()
+            print(f"Tokens generated successfully")
             
             # Return success response
             return jsonify({
@@ -166,18 +191,31 @@ def register():
                 **tokens
             }), 201
             
-        except IntegrityError:
+        except IntegrityError as e:
             db.session.rollback()
+            print(f"IntegrityError: {str(e)}")
             return jsonify({
                 'error': 'Registration failed',
                 'message': 'An account with this email already exists'
             }), 409
         
-        except Exception as e:
+        except SQLAlchemyError as e:
             db.session.rollback()
+            print(f"SQLAlchemyError: {str(e)}")
             return jsonify({
                 'error': 'Registration failed',
-                'message': 'An error occurred while creating your account'
+                'message': 'Database error occurred. Please try again.'
+            }), 500
+        
+        except Exception as e:
+            db.session.rollback()
+            print(f"Unexpected error during registration: {str(e)}")
+            print(f"Error type: {type(e).__name__}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'error': 'Registration failed',
+                'message': f'An error occurred while creating your account: {str(e)}'
             }), 500
     
     except BadRequest:
