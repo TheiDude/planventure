@@ -1,11 +1,12 @@
 import os
 import os
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, g
 from flask_cors import CORS
 from dotenv import load_dotenv
 from models import db, User, Trip
 from jwt_utils import token_required, optional_token
 from auth_routes import auth_bp
+from auth_middleware import AuthMiddleware, require_auth, optional_auth, get_current_user
 
 # Load environment variables
 load_dotenv()
@@ -21,6 +22,9 @@ app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'jwt-secret-change-in
 # Initialize extensions
 db.init_app(app)
 CORS(app, origins=os.getenv('CORS_ORIGINS', 'http://localhost:3000').split(','))
+
+# Initialize auth middleware
+auth_middleware = AuthMiddleware(app)
 
 # Register blueprints
 app.register_blueprint(auth_bp)
@@ -58,21 +62,113 @@ def test_protected_route(current_user_id):
     })
 
 @app.route('/auth/profile')
-@optional_token
-def get_profile(current_user_id):
+@optional_auth
+def get_profile():
     """Example route where authentication is optional"""
-    if current_user_id:
-        user = User.query.get(current_user_id)
-        if user:
-            return jsonify({
-                "authenticated": True,
-                "user": user.to_dict()
-            })
+    if g.is_authenticated:
+        user = get_current_user()
+        return jsonify({
+            "authenticated": True,
+            "user": user.to_dict(),
+            "message": f"Welcome back, {user.email}!"
+        })
     
     return jsonify({
         "authenticated": False,
         "message": "No authentication provided"
     })
+
+@app.route('/api/user/profile')
+@require_auth
+def get_user_profile():
+    """Protected route that requires authentication"""
+    user = get_current_user()
+    return jsonify({
+        "message": "User profile accessed",
+        "user": user.to_dict()
+    })
+
+@app.route('/api/user/trips')
+@require_auth
+def get_user_trips():
+    """Get all trips for the authenticated user"""
+    user = get_current_user()
+    trips = Trip.query.filter_by(user_id=user.id).all()
+    
+    return jsonify({
+        "message": "User trips retrieved",
+        "user_id": user.id,
+        "trips": [trip.to_dict() for trip in trips],
+        "total_trips": len(trips)
+    })
+
+@app.route('/api/trips', methods=['POST'])
+@require_auth
+def create_trip():
+    """Create a new trip for the authenticated user"""
+    user = get_current_user()
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({
+            'error': 'Invalid request',
+            'message': 'Request must contain JSON data'
+        }), 400
+    
+    # Basic validation
+    required_fields = ['destination', 'start_date', 'end_date']
+    for field in required_fields:
+        if field not in data:
+            return jsonify({
+                'error': 'Validation error',
+                'message': f'{field} is required'
+            }), 400
+    
+    try:
+        from datetime import datetime
+        
+        # Parse dates
+        start_date = datetime.strptime(data['start_date'], '%Y-%m-%d').date()
+        end_date = datetime.strptime(data['end_date'], '%Y-%m-%d').date()
+        
+        # Create trip
+        trip = Trip(
+            user_id=user.id,
+            destination=data['destination'],
+            start_date=start_date,
+            end_date=end_date,
+            description=data.get('description'),
+            budget=data.get('budget')
+        )
+        
+        # Set coordinates if provided
+        if 'latitude' in data and 'longitude' in data:
+            trip.set_coordinates(data['latitude'], data['longitude'])
+        
+        # Set itinerary if provided
+        if 'itinerary' in data:
+            trip.set_itinerary(data['itinerary'])
+        
+        db.session.add(trip)
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Trip created successfully',
+            'trip': trip.to_dict()
+        }), 201
+        
+    except ValueError as e:
+        return jsonify({
+            'error': 'Validation error',
+            'message': 'Invalid date format. Use YYYY-MM-DD'
+        }), 400
+    
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'error': 'Server error',
+            'message': 'Failed to create trip'
+        }), 500
 
 if __name__ == '__main__':
     with app.app_context():
